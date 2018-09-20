@@ -16,7 +16,8 @@
 
 //! In memory client backend
 
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeSet};
+use std::cmp::Ordering;
 use std::sync::Arc;
 use parking_lot::RwLock;
 use error;
@@ -24,14 +25,13 @@ use backend;
 use light;
 use primitives::AuthorityId;
 use runtime_primitives::generic::BlockId;
-use runtime_primitives::traits::{Block as BlockT, Header as HeaderT, Zero, NumberFor, As};
+use runtime_primitives::traits::{Block as BlockT, Header as HeaderT, Zero, One, NumberFor, As};
 use runtime_primitives::bft::Justification;
 use blockchain::{self, BlockStatus};
 use state_machine::backend::{Backend as StateBackend, InMemory};
 use patricia_trie::NodeCodec;
 use hashdb::Hasher;
 use heapsize::HeapSizeOf;
-use client::update_leaves;
 
 struct PendingBlock<B: BlockT> {
 	block: StoredBlock<B>,
@@ -84,6 +84,32 @@ impl<B: BlockT> StoredBlock<B> {
 }
 
 #[derive(Clone)]
+struct LeafEntry<Block: BlockT> {
+	number: NumberFor<Block>,
+	hash: Block::Hash,
+}
+
+impl<Block: BlockT> Ord for LeafEntry<Block> {
+		fn cmp(&self, other: &LeafEntry<Block>) -> Ordering {
+		other.number.cmp(&self.number)
+	}
+}
+
+impl<Block: BlockT> PartialOrd for LeafEntry<Block> {
+		fn partial_cmp(&self, other: &LeafEntry<Block>) -> Option<Ordering> {
+		Some(other.number.cmp(&self.number))
+	}
+}
+
+impl<Block: BlockT> PartialEq for LeafEntry<Block> {
+		fn eq(&self, other: &LeafEntry<Block>) -> bool {
+		self.number == other.number
+	}
+}
+
+impl<Block: BlockT> Eq for LeafEntry<Block> {}
+
+#[derive(Clone)]
 struct BlockchainStorage<Block: BlockT> {
 	blocks: HashMap<Block::Hash, StoredBlock<Block>>,
 	hashes: HashMap<<<Block as BlockT>::Header as HeaderT>::Number, Block::Hash>,
@@ -91,7 +117,7 @@ struct BlockchainStorage<Block: BlockT> {
 	best_number: <<Block as BlockT>::Header as HeaderT>::Number,
 	genesis_hash: Block::Hash,
 	cht_roots: HashMap<NumberFor<Block>, Block::Hash>,
-	leaves: Vec<Block::Hash>,
+	leaves: BTreeSet<LeafEntry<Block>>,
 }
 
 /// In-memory blockchain. Supports concurrent reads.
@@ -137,7 +163,7 @@ impl<Block: BlockT> Blockchain<Block> {
 				best_number: Zero::zero(),
 				genesis_hash: Default::default(),
 				cht_roots: HashMap::new(),
-				leaves: Vec::new(),
+				leaves: BTreeSet::new(),
 			}));
 		Blockchain {
 			storage: storage.clone(),
@@ -161,18 +187,19 @@ impl<Block: BlockT> Blockchain<Block> {
 
 		let mut storage = self.storage.write();
 
-		let mut leaves = storage.leaves.clone();
+		storage.leaves.insert(LeafEntry {
+			hash: hash.clone(),
+			number: number.clone()
+		});
 
-		{
-			let blocks = &mut storage.blocks;
-			let hash_to_header = |hash: &Block::Hash| {
-				Ok(blocks.get(hash).expect("failed to get header for hash q.e.d").header().clone())
-			};
-			update_leaves::<Block, _>(&header, &mut leaves, hash_to_header)
-				.expect("TODO update leaves faild q.e.d");
+		// genesis block has no parent to remove
+		if number != <NumberFor<Block> as Zero>::zero() {
+			storage.leaves.remove(&LeafEntry {
+				hash: *header.parent_hash(),
+				number: number - <NumberFor<Block> as One>::one(),
+			});
 		}
 
-		storage.leaves = leaves;
 		storage.blocks.insert(hash.clone(), StoredBlock::new(header, body, justification));
 		storage.hashes.insert(number, hash.clone());
 
@@ -259,7 +286,7 @@ impl<Block: BlockT> blockchain::Backend<Block> for Blockchain<Block> {
 	}
 
 	fn leaves(&self) -> error::Result<Vec<Block::Hash>> {
-		Ok(self.storage.read().leaves.clone())
+		Ok(self.storage.read().leaves.iter().map(|x| x.hash.clone()).collect())
 	}
 }
 
