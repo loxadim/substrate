@@ -16,8 +16,7 @@
 
 //! In memory client backend
 
-use std::collections::{HashMap, BTreeSet};
-use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::sync::Arc;
 use parking_lot::RwLock;
 use error;
@@ -25,13 +24,14 @@ use backend;
 use light;
 use primitives::AuthorityId;
 use runtime_primitives::generic::BlockId;
-use runtime_primitives::traits::{Block as BlockT, Header as HeaderT, Zero, One, NumberFor, As};
+use runtime_primitives::traits::{Block as BlockT, Header as HeaderT, Zero, NumberFor, As};
 use runtime_primitives::bft::Justification;
 use blockchain::{self, BlockStatus};
 use state_machine::backend::{Backend as StateBackend, InMemory};
 use patricia_trie::NodeCodec;
 use hashdb::Hasher;
 use heapsize::HeapSizeOf;
+use leaves::LeafSet;
 
 struct PendingBlock<B: BlockT> {
 	block: StoredBlock<B>,
@@ -83,37 +83,6 @@ impl<B: BlockT> StoredBlock<B> {
 	}
 }
 
-/// helper wrapper type to keep a list of block hashes ordered
-/// by `number` descending in a `BTreeSet` which allows faster and simpler
-/// insertion and removal than keeping them in a list.
-#[derive(Clone)]
-struct LeafEntry<Block: BlockT> {
-	number: NumberFor<Block>,
-	hash: Block::Hash,
-}
-
-impl<Block: BlockT> Ord for LeafEntry<Block> {
-	fn cmp(&self, other: &LeafEntry<Block>) -> Ordering {
-		// descending order
-		other.number.cmp(&self.number)
-	}
-}
-
-impl<Block: BlockT> PartialOrd for LeafEntry<Block> {
-	fn partial_cmp(&self, other: &LeafEntry<Block>) -> Option<Ordering> {
-		// descending order
-		Some(other.number.cmp(&self.number))
-	}
-}
-
-impl<Block: BlockT> PartialEq for LeafEntry<Block> {
-	fn eq(&self, other: &LeafEntry<Block>) -> bool {
-		self.number == other.number
-	}
-}
-
-impl<Block: BlockT> Eq for LeafEntry<Block> {}
-
 #[derive(Clone)]
 struct BlockchainStorage<Block: BlockT> {
 	blocks: HashMap<Block::Hash, StoredBlock<Block>>,
@@ -122,7 +91,7 @@ struct BlockchainStorage<Block: BlockT> {
 	best_number: <<Block as BlockT>::Header as HeaderT>::Number,
 	genesis_hash: Block::Hash,
 	cht_roots: HashMap<NumberFor<Block>, Block::Hash>,
-	leaves: BTreeSet<LeafEntry<Block>>,
+	leaves: LeafSet<Block::Hash, NumberFor<Block>>,
 }
 
 /// In-memory blockchain. Supports concurrent reads.
@@ -168,7 +137,7 @@ impl<Block: BlockT> Blockchain<Block> {
 				best_number: Zero::zero(),
 				genesis_hash: Default::default(),
 				cht_roots: HashMap::new(),
-				leaves: BTreeSet::new(),
+				leaves: LeafSet::new(),
 			}));
 		Blockchain {
 			storage: storage.clone(),
@@ -192,18 +161,7 @@ impl<Block: BlockT> Blockchain<Block> {
 
 		let mut storage = self.storage.write();
 
-		storage.leaves.insert(LeafEntry {
-			hash: hash.clone(),
-			number: number.clone()
-		});
-
-		// genesis block has no parent to remove
-		if number != <NumberFor<Block> as Zero>::zero() {
-			storage.leaves.remove(&LeafEntry {
-				hash: *header.parent_hash(),
-				number: number - <NumberFor<Block> as One>::one(),
-			});
-		}
+		storage.leaves.update(hash.clone(), number.clone(), header.parent_hash().clone());
 
 		storage.blocks.insert(hash.clone(), StoredBlock::new(header, body, justification));
 		storage.hashes.insert(number, hash.clone());
@@ -291,7 +249,7 @@ impl<Block: BlockT> blockchain::Backend<Block> for Blockchain<Block> {
 	}
 
 	fn leaves(&self) -> error::Result<Vec<Block::Hash>> {
-		Ok(self.storage.read().leaves.iter().map(|x| x.hash.clone()).collect())
+		Ok(self.storage.read().leaves.hashes())
 	}
 }
 
