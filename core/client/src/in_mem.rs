@@ -24,9 +24,8 @@ use backend;
 use light;
 use primitives::AuthorityId;
 use runtime_primitives::generic::BlockId;
-use runtime_primitives::traits::{Block as BlockT, Header as HeaderT, Zero,
-	NumberFor, As, Digest, DigestItem};
-use runtime_primitives::bft::Justification;
+use runtime_primitives::traits::{Block as BlockT, Chain, Header as HeaderT,
+	Consensus as ConsensusT, Zero, NumberFor, As, Digest, DigestItem};
 use blockchain::{self, BlockStatus};
 use state_machine::backend::{Backend as StateBackend, InMemory};
 use state_machine::InMemoryChangesTrieStorage;

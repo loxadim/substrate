@@ -20,9 +20,9 @@ use std::sync::Arc;
 use futures::sync::mpsc;
 use parking_lot::{Mutex, RwLock};
 use primitives::AuthorityId;
-use runtime_primitives::{bft::Justification, generic::{BlockId, SignedBlock, Block as RuntimeBlock}};
-use runtime_primitives::traits::{Block as BlockT, Header as HeaderT, Zero, One, As, NumberFor, CurrentHeight, BlockNumberToHash};
-use runtime_primitives::BuildStorage;
+use runtime_primitives::generic::{BlockId, SignedBlock};
+use runtime_primitives::traits::{Block as BlockT, Header as HeaderT, Zero, One, As, NumberFor, GetHeight, BlockNumberToHashuse};
+use runtime_primitives::{BuildStorage, Justification};
 use primitives::{Blake2Hasher, RlpCodec, H256};
 use primitives::storage::{StorageKey, StorageData};
 use primitives::storage::well_known_keys;
@@ -37,7 +37,7 @@ use blockchain::{self, Info as ChainInfo, Backend as ChainBackend, HeaderBackend
 use call_executor::{CallExecutor, LocalCallExecutor};
 use executor::{RuntimeVersion, RuntimeInfo};
 use notifications::{StorageNotifications, StorageEventStream};
-use {cht, error, in_mem, block_builder, bft, genesis};
+use {cht, error, in_mem, block_builder, runtime_io, genesis};
 
 /// Type that implements `futures::Stream` of block import events.
 pub type BlockchainEventStream<Block> = mpsc::UnboundedReceiver<BlockImportNotification<Block>>;
@@ -150,13 +150,13 @@ pub struct BlockImportNotification<Block: BlockT> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct JustifiedHeader<Block: BlockT> {
 	header: <Block as BlockT>::Header,
-	justification: ::bft::Justification<Block::Hash>,
+	justification: Justification,
 	authorities: Vec<AuthorityId>,
 }
 
 impl<Block: BlockT> JustifiedHeader<Block> {
 	/// Deconstruct the justified header into parts.
-	pub fn into_inner(self) -> (<Block as BlockT>::Header, ::bft::Justification<Block::Hash>, Vec<AuthorityId>) {
+	pub fn into_inner(self) -> (<Block as BlockT>::Header, Justification, Vec<AuthorityId>) {
 		(self.header, self.justification, self.authorities)
 	}
 }
@@ -360,7 +360,7 @@ impl<B, E, Block> Client<B, E, Block> where
 	pub fn check_justification(
 		&self,
 		header: <Block as BlockT>::Header,
-		justification: ::bft::UncheckedJustification<Block::Hash>,
+		justification: ::bft::UncheckedJustification,
 	) -> error::Result<JustifiedHeader<Block>> {
 		let parent_hash = header.parent_hash().clone();
 		let authorities = self.authorities_at(&BlockId::Hash(parent_hash))?;
@@ -409,7 +409,7 @@ impl<B, E, Block> Client<B, E, Block> where
 		origin: BlockOrigin,
 		hash: Block::Hash,
 		header: Block::Header,
-		justification: bft::Justification<Block::Hash>,
+		justification: bft::Justification,
 		body: Option<Vec<Block::Extrinsic>>,
 		authorities: Vec<AuthorityId>,
 	) -> error::Result<ImportResult> {
@@ -548,7 +548,7 @@ impl<B, E, Block> Client<B, E, Block> where
 	}
 
 	/// Get block justification set by id.
-	pub fn justification(&self, id: &BlockId<Block>) -> error::Result<Option<Justification<Block::Hash>>> {
+	pub fn justification(&self, id: &BlockId<Block>) -> error::Result<Option<Justification>> {
 		self.backend.blockchain().justification(*id)
 	}
 
@@ -600,7 +600,7 @@ impl<B, E, Block> bft::BlockImport<Block> for Client<B, E, Block>
 	fn import_block(
 		&self,
 		block: Block,
-		justification: ::bft::Justification<Block::Hash>,
+		justification: Justification,
 		authorities: &[AuthorityId]
 	) -> bool {
 		let (header, extrinsics) = block.deconstruct();

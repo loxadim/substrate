@@ -22,9 +22,9 @@ use futures::{Future, IntoFuture};
 use parking_lot::RwLock;
 
 use primitives::AuthorityId;
-use runtime_primitives::{bft::Justification, generic::BlockId};
-use runtime_primitives::traits::{Block as BlockT, NumberFor};
+use runtime_primitives::generic::BlockId;
 use state_machine::{Backend as StateBackend, InMemoryChangesTrieStorage, TrieBackend};
+use runtime_primitives::traits::{Block as BlockT, Chain, Consensus as ConsensusT, NumberFor};
 
 use backend::{Backend as ClientBackend, BlockImportOperation, RemoteBackend};
 use blockchain::HeaderBackend as BlockchainHeaderBackend;

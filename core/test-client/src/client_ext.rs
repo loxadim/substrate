@@ -22,7 +22,7 @@ use runtime_primitives::StorageMap;
 use runtime::genesismap::{GenesisConfig, additional_storage_with_genesis};
 use executor::NativeExecutor;
 use runtime;
-use bft;
+use primitives::{AuthorityId};
 use {Backend, Executor};
 
 /// Extension trait for a test client.

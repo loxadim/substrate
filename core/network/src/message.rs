@@ -20,8 +20,7 @@ use runtime_primitives::traits::{Block as BlockT, Header as HeaderT};
 use codec::{Encode, Decode, Input, Output};
 pub use self::generic::{
 	BlockAnnounce, RemoteCallRequest, RemoteReadRequest,
-	RemoteHeaderRequest, RemoteHeaderResponse, ConsensusVote,
-	SignedConsensusVote, FromBlock
+	RemoteHeaderRequest, RemoteHeaderResponse,FromBlock
 };
 
 /// A unique ID of a request.
