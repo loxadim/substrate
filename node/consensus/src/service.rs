@@ -26,16 +26,15 @@ use bft::{self, BftService};
 use client::{BlockchainEvents, ChainHead, BlockBody};
 use ed25519;
 use futures::prelude::*;
-use node_api::Api;
-use node_primitives::{Block, Header};
-use transaction_pool::TransactionPool;
+use transaction_pool::{TransactionPool, Client as TPClient};
+use runtime_primitives::traits::{Block as BlockT, Header as HeaderT};
 
 use tokio::executor::current_thread::TaskExecutor as LocalThreadHandle;
 use tokio::runtime::TaskExecutor as ThreadPoolHandle;
 use tokio::runtime::current_thread::Runtime as LocalRuntime;
 use tokio::timer::Interval;
 
-use super::{Network, ProposerFactory};
+use super::{Network, ProposerFactory, Client};
 use error;
 
 const TIMER_DELAY_MS: u64 = 5000;
@@ -43,15 +42,16 @@ const TIMER_INTERVAL_MS: u64 = 500;
 
 // spin up an instance of BFT agreement on the current thread's executor.
 // panics if there is no current thread executor.
-fn start_bft<F, C>(
-	header: Header,
+fn start_bft<F, C, Block>(
+	header: <Block as BlockT>::Header,
 	bft_service: Arc<BftService<Block, F, C>>,
 ) where
 	F: bft::Environment<Block> + 'static,
 	C: bft::BlockImport<Block> + bft::Authorities<Block> + 'static,
 	F::Error: ::std::fmt::Debug,
 	<F::Proposer as bft::Proposer<Block>>::Error: ::std::fmt::Display + Into<error::Error>,
-	<F as bft::Environment<Block>>::Error: ::std::fmt::Display
+	<F as bft::Environment<Block>>::Error: ::std::fmt::Display,
+	Block: BlockT,
 {
 	let mut handle = LocalThreadHandle::current();
 	match bft_service.build_upon(&header) {
@@ -80,10 +80,13 @@ impl Service {
 		key: ed25519::Pair,
 	) -> Service
 		where
-			A: Api + Send + Sync + 'static,
-			C: BlockchainEvents<Block> + ChainHead<Block> + BlockBody<Block>,
-			C: bft::BlockImport<Block> + bft::Authorities<Block> + Send + Sync + 'static,
-			N: Network + Send + 'static,
+			A: Client + TPClient<Block = <A as Client>::Block> + 'static,
+			C: BlockchainEvents<<A as Client>::Block>
+				+ ChainHead<<A as Client>::Block>
+				+ BlockBody<<A as Client>::Block>,
+			C: bft::BlockImport<<A as Client>::Block>
+				+ bft::Authorities<<A as Client>::Block> + Send + Sync + 'static,
+			N: Network<Block = <A as Client>::Block> + Send + 'static,
 	{
 		use parking_lot::RwLock;
 		use super::OfflineTracker;

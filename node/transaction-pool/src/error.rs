@@ -15,14 +15,14 @@
 // along with Substrate.  If not, see <http://www.gnu.org/licenses/>.
 
 use extrinsic_pool;
-use node_api;
 use primitives::Hash;
 use runtime::{Address, UncheckedExtrinsic};
+use client;
 
 error_chain! {
 	links {
+		Client(client::error::Error, client::error::ErrorKind);
 		Pool(extrinsic_pool::Error, extrinsic_pool::ErrorKind);
-		Api(node_api::Error, node_api::ErrorKind);
 	}
 	errors {
 		/// Unexpected extrinsic format submitted
